@@ -46,33 +46,39 @@ async function groqWithFallback(fn) {
 // ── AI label scan ─────────────────────────────────────────────────────────────
 app.post("/api/scan", async (req, res) => {
   const { imageBase64 } = req.body;
-  if (!imageBase64) return res.status(400).json({ error: "No image provided" });
+  if (!imageBase64) return res.status(400).json({ ok: false, error: "No image provided" });
 
-  const prompt = `You are a nutrition label reader. Look at this food packaging image and extract the nutrition facts.
-Return ONLY valid JSON in this exact format, no markdown, no explanation:
+  const prompt = `Extract nutrition facts from this label. Read the serving size and all nutrition values carefully.
+
+CRITICAL INSTRUCTIONS:
+1. Find "Serving size" - extract the grams value (e.g., "28g" or "About 15 chips (28g)")
+2. Find "Calories" or "Energy" - this is the kcal value
+3. Find macros: Total Fat, Protein, Total Carbohydrate (or Carbs)
+4. Find fiber and sugar if listed
+5. Convert ALL values to per 100g basis using: (value / serving_grams) * 100
+6. Return ONLY the JSON below, no extra text:
+
 {
-  "name": "product name",
+  "name": "product name from package",
   "per100": {
-    "k": <kcal per 100g as number>,
-    "p": <protein g per 100g as number>,
-    "c": <carbs g per 100g as number>,
-    "f": <fat g per 100g as number>,
-    "fi": <fiber g per 100g or 0>,
-    "su": <sugar g per 100g or 0>,
-    "na": <sodium mg per 100g or 0>
+    "k": calories_per_100g,
+    "p": protein_per_100g,
+    "c": carbs_per_100g,
+    "f": fat_per_100g,
+    "fi": fiber_per_100g_or_0,
+    "su": sugar_per_100g_or_0,
+    "na": sodium_mg_per_100g_or_0
   },
   "serving": {
-    "label": "serving size label e.g. 1 packet",
-    "grams": <serving size in grams as number>
+    "label": "exact serving size text",
+    "grams": serving_size_in_grams
   }
-}
-If values are per serving not per 100g, convert them to per 100g.
-If you cannot read the label clearly, still return your best estimate with the data visible.`;
+}`;
 
   try {
     const result = await groqWithFallback(async (groq) => {
       const chat = await groq.chat.completions.create({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        model: "llama-3.2-90b-vision-preview",
         messages: [
           {
             role: "user",
@@ -89,19 +95,40 @@ If you cannot read the label clearly, still return your best estimate with the d
             ],
           },
         ],
-        max_tokens: 512,
-        temperature: 0.1,
+        max_tokens: 1024,
+        temperature: 0,
       });
       return chat.choices[0]?.message?.content || "";
     });
 
-    // strip markdown fences if model wraps in ```json
-    const clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    console.log("Raw AI response:", result);
+
+    // strip markdown fences and extract JSON
+    let clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    
+    // Try to find JSON in response if wrapped in text
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      clean = jsonMatch[0];
+    }
+
     const parsed = JSON.parse(clean);
+    
+    // Validate required fields
+    if (!parsed.per100 || typeof parsed.per100.k !== 'number') {
+      throw new Error("Invalid response format");
+    }
+
+    console.log("Parsed data:", JSON.stringify(parsed, null, 2));
     res.json({ ok: true, data: parsed });
   } catch (e) {
-    console.error("scan error", e?.message);
-    res.status(500).json({ error: "Could not read label — try a clearer photo" });
+    console.error("Scan error:", e.message);
+    console.error("Stack:", e.stack);
+    res.json({ 
+      ok: false, 
+      error: "AI couldn't read the label clearly",
+      debug: e.message 
+    });
   }
 });
 

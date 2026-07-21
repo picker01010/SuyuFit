@@ -2181,73 +2181,94 @@ function onboard(){
 }
 
 /* ================= PROFILE SWITCHER ================= */
+function getAllProfiles(){
+  const profiles=[];
+  for(let i=1;i<=10;i++){
+    const key=getProfileKey("profile"+i);
+    try{
+      const raw=localStorage.getItem(key);
+      if(raw){
+        const data=JSON.parse(raw);
+        profiles.push({
+          id:"profile"+i,
+          name:data.profile.name,
+          workouts:Object.keys(data.workLog||{}).filter(k=>data.workLog[k].done).length,
+          foodDays:Object.keys(data.foodLog||{}).filter(k=>(data.foodLog[k]||[]).length>0).length
+        });
+      }
+    }catch(e){}
+  }
+  return profiles;
+}
+
 function openProfilePicker(){
   const currentId=getCurrentProfileId();
-  const profiles=[
-    {id:"profile1",name:"Suyu",editable:true},
-    {id:"profile2",name:"Partner",editable:true}
-  ];
+  const profiles=getAllProfiles();
+  
   openSheet(`
-    <h2>Profile</h2>
-    <div class="note" style="margin-bottom:10px">Tap a name to edit it. Each profile has separate food logs, workouts, weight tracking, and goals.</div>
-    <button class="btn" id="viewMyProfile" style="margin-bottom:14px">View ${esc(S.profile.name)}'s stats & settings</button>
-    <h3 style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px">Switch profile</h3>
+    <h2>Who's training?</h2>
+    <div class="note" style="margin-bottom:14px">Each profile has separate food logs, workouts, weight tracking, and goals.</div>
     <div class="scroll">
       ${profiles.map(p=>{
         const isActive=p.id===currentId;
-        // Try to load profile to show basic info
-        let info="",displayName="";
-        try{
-          const raw=localStorage.getItem(getProfileKey(p.id));
-          if(raw){
-            const data=JSON.parse(raw);
-            displayName=data.profile.name||p.name;
-            const wc=Object.keys(data.workLog||{}).filter(k=>data.workLog[k].done).length;
-            const fc=Object.keys(data.foodLog||{}).filter(k=>(data.foodLog[k]||[]).length>0).length;
-            info=`${wc} workouts · ${fc} food days`;
-          }else{
-            displayName=p.name;
-            info="Not set up yet";
-          }
-        }catch(e){
-          displayName=p.name;
-          info="Not set up yet";
-        }
-        return `<button class="srow" data-switch="${p.id}" ${isActive?'style="opacity:0.6;cursor:default"':''}>
+        return `<button class="srow" data-switch="${p.id}" style="${isActive?'border:2px solid var(--gold);background:var(--gold-soft)':''}">
           <div class="sn">
-            <b><button class="act" data-edit-profile="${p.id}" style="padding:0;color:var(--gold)">${esc(displayName)}</button> ${isActive?'✓':''}</b>
-            <span>${info}</span>
+            <b style="font-size:16px">${esc(p.name)} ${isActive?'(current)':''}</b>
+            <span>${p.workouts} workouts · ${p.foodDays} food days</span>
           </div>
-          ${!isActive?'<div class="chip">Switch</div>':''}
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="chip" data-edit-profile="${p.id}" onclick="event.stopPropagation()">Edit</button>
+            ${!isActive?`<button class="chip" data-delete-profile="${p.id}" onclick="event.stopPropagation()" style="border-color:var(--warn);color:var(--warn)">Delete</button>`:''}
+          </div>
         </button>`;
       }).join("")}
-    </div>`);
+      ${profiles.length<10?`<button class="srow" data-new-profile style="border:1px dashed var(--gold);background:transparent">
+        <div class="sn">
+          <b style="color:var(--gold)">+ Add New Profile</b>
+          <span>Create a new profile</span>
+        </div>
+      </button>`:""}
+    </div>
+    <button class="btn ghost" id="viewMyProfile" style="margin-top:10px">View ${esc(S.profile.name)}'s stats & settings</button>
+  `);
   
-  el("viewMyProfile").onclick=()=>{
-    closeSheet();
-    curTab="me";
-    document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="me"));
-    document.querySelectorAll(".tabpage").forEach(p=>p.classList.toggle("on",p.id==="page-me"));
-    renderMe();
-    paintDate();
-    window.scrollTo(0,0);
-  };
+  // Switch profile
+  document.querySelectorAll("[data-switch]").forEach(b=>{
+    const pid=b.dataset.switch;
+    if(pid===currentId){
+      b.style.cursor="default";
+      b.onclick=()=>{
+        closeSheet();
+        curTab="me";
+        document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="me"));
+        document.querySelectorAll(".tabpage").forEach(p=>p.classList.toggle("on",p.id==="page-me"));
+        renderMe();
+        paintDate();
+        window.scrollTo(0,0);
+      };
+      return;
+    }
+    b.onclick=()=>{
+      const profile=profiles.find(p=>p.id===pid);
+      closeSheet();
+      switchProfile(pid,profile.name);
+    };
+  });
   
+  // Edit profile name
   document.querySelectorAll("[data-edit-profile]").forEach(b=>{
-    b.onclick=(e)=>{
-      e.stopPropagation();
+    b.onclick=()=>{
       const pid=b.dataset.editProfile;
-      // Load the profile
       let profData;
       try{
         const raw=localStorage.getItem(getProfileKey(pid));
         if(raw)profData=JSON.parse(raw);
       }catch(e){}
-      if(!profData)profData=freshState(profiles.find(p=>p.id===pid).name);
+      if(!profData)return;
       
-      openSheet(`<h2>Edit profile name</h2>
-        <div class="frow"><div><label class="fl">Name</label><input id="profName" value="${esc(profData.profile.name)}" placeholder="Name"></div></div>
-        <button class="btn" id="profSave">Save</button>`);
+      openSheet(`<h2>Edit Profile</h2>
+        <div class="frow"><div><label class="fl">Name</label><input id="profName" value="${esc(profData.profile.name)}" placeholder="Name" autofocus></div></div>
+        <button class="btn" id="profSave" style="margin-top:10px">Save</button>`);
       el("profSave").onclick=()=>{
         const newName=el("profName").value.trim();
         if(!newName){toast("Enter a name");return;}
@@ -2258,24 +2279,80 @@ function openProfilePicker(){
           updateLv();
         }
         closeSheet();
-        toast("Profile name updated");
+        toast("Profile updated");
         setTimeout(()=>openProfilePicker(),300);
       };
     };
   });
   
-  document.querySelectorAll("[data-switch]").forEach(b=>{
-    const pid=b.dataset.switch;
-    if(pid===currentId){
-      b.onclick=null;
-      return;
-    }
+  // Delete profile
+  document.querySelectorAll("[data-delete-profile]").forEach(b=>{
     b.onclick=()=>{
+      const pid=b.dataset.deleteProfile;
       const profile=profiles.find(p=>p.id===pid);
-      closeSheet();
-      switchProfile(pid,profile.name);
+      if(!profile)return;
+      
+      openSheet(`<h2>Delete Profile?</h2>
+        <div class="note" style="margin-bottom:14px">This will permanently delete <b>${esc(profile.name)}'s</b> data including ${profile.workouts} workouts and ${profile.foodDays} food days. This cannot be undone.</div>
+        <div class="btnrow">
+          <button class="btn ghost" id="delCancel">Cancel</button>
+          <button class="btn danger" id="delConfirm">Delete Profile</button>
+        </div>`);
+      el("delCancel").onclick=()=>{closeSheet();setTimeout(()=>openProfilePicker(),300);};
+      el("delConfirm").onclick=()=>{
+        try{localStorage.removeItem(getProfileKey(pid));}catch(e){}
+        closeSheet();
+        toast(profile.name+"'s profile deleted");
+        setTimeout(()=>openProfilePicker(),300);
+      };
     };
   });
+  
+  // Create new profile
+  const newBtn=document.querySelector("[data-new-profile]");
+  if(newBtn){
+    newBtn.onclick=()=>{
+      openSheet(`<h2>New Profile</h2>
+        <div class="frow"><div><label class="fl">Name</label><input id="newProfName" placeholder="Enter name" autofocus></div></div>
+        <button class="btn" id="newProfCreate" style="margin-top:10px">Create Profile</button>`);
+      el("newProfCreate").onclick=()=>{
+        const name=el("newProfName").value.trim();
+        if(!name){toast("Enter a name");return;}
+        
+        // Find next available profile slot
+        let newId=null;
+        for(let i=1;i<=10;i++){
+          const key=getProfileKey("profile"+i);
+          if(!localStorage.getItem(key)){
+            newId="profile"+i;
+            break;
+          }
+        }
+        if(!newId){toast("Maximum 10 profiles reached");return;}
+        
+        // Create new profile
+        const newData=freshState(name);
+        try{localStorage.setItem(getProfileKey(newId),JSON.stringify(newData));}catch(e){
+          toast("Error creating profile");return;
+        }
+        
+        closeSheet();
+        toast("Profile created");
+        switchProfile(newId,name);
+      };
+    };
+  }
+  
+  // View current profile stats
+  el("viewMyProfile").onclick=()=>{
+    closeSheet();
+    curTab="me";
+    document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="me"));
+    document.querySelectorAll(".tabpage").forEach(p=>p.classList.toggle("on",p.id==="page-me"));
+    renderMe();
+    paintDate();
+    window.scrollTo(0,0);
+  };
 }
 
 /* ================= NAV / DATE / BOOT ================= */
