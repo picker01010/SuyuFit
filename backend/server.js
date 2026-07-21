@@ -62,31 +62,36 @@ app.post("/api/scan", async (req, res) => {
 
   console.log("📸 New scan request received");
 
-  const prompt = `You are an expert nutrition label reader. Extract ALL nutrition information from this food label image.
+  const prompt = `You are an EXPERT nutrition label reader. Extract EXACT values from the nutrition facts label.
 
-INSTRUCTIONS:
-1. Find the product name
-2. Find "Serving size" and extract grams (e.g., "28g" or "About 15 chips (28g)")
-3. Find "Calories" or "Energy" - get the kcal value
-4. Find: Protein, Total Carbohydrate, Total Fat (in grams)
-5. Find if available: Fiber, Sugar, Sodium (in mg)
-6. Convert ALL values to per 100g basis: (value / serving_grams) × 100
+CRITICAL INSTRUCTIONS:
+1. Read EXACTLY what's printed on the label - do NOT estimate or round
+2. Find "Serving size" - extract the EXACT gram amount (e.g., "28g" or "About 15 chips (28g)")
+3. Find "Calories" or "Energy" - use the EXACT kcal number shown
+4. Find macros: Total Fat, Protein, Total Carbohydrate - EXACT grams as printed
+5. Find: Fiber, Sugar, Sodium - EXACT values if shown
+6. Convert ALL values to per 100g using EXACT math: (value ÷ serving_grams) × 100
+7. Keep 1 decimal place for precision
 
-Return ONLY this JSON, no extra text:
+EXAMPLES:
+- Label shows "Serving: 28g, Calories: 150" → per 100g kcal = (150 ÷ 28) × 100 = 535.7
+- Label shows "Serving: 30g, Protein: 5g" → per 100g protein = (5 ÷ 30) × 100 = 16.7
+
+Return ONLY this JSON with EXACT calculated values, no text before/after:
 {
-  "name": "product name from package",
+  "name": "exact product name from package",
   "per100": {
-    "k": calories_per_100g,
-    "p": protein_per_100g,
-    "c": carbs_per_100g,
-    "f": fat_per_100g,
-    "fi": fiber_per_100g_or_0,
-    "su": sugar_per_100g_or_0,
-    "na": sodium_mg_per_100g_or_0
+    "k": 535.7,
+    "p": 16.7,
+    "c": 53.6,
+    "f": 28.6,
+    "fi": 3.6,
+    "su": 7.1,
+    "na": 357
   },
   "serving": {
-    "label": "serving size text from label",
-    "grams": serving_size_in_grams
+    "label": "exact serving text from label",
+    "grams": 28
   }
 }`;
 
@@ -102,7 +107,12 @@ Return ONLY this JSON, no extra text:
       console.log(`🔑 Trying Gemini API...`);
       
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash",
+        generationConfig: {
+          temperature: 0, // No creativity - exact reading only
+        }
+      });
       
       const response = await model.generateContent([
         prompt,
