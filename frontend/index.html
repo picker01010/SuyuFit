@@ -2184,35 +2184,38 @@ function onboard(){
 function openProfilePicker(){
   const currentId=getCurrentProfileId();
   const profiles=[
-    {id:"profile1",name:"Suyu"},
-    {id:"profile2",name:"Partner"}
+    {id:"profile1",name:"Suyu",editable:true},
+    {id:"profile2",name:"Partner",editable:true}
   ];
   openSheet(`
     <h2>Profile</h2>
-    <div class="note" style="margin-bottom:10px">Each profile has separate food logs, workouts, weight tracking, and goals. The workout plan and schedule are shared.</div>
+    <div class="note" style="margin-bottom:10px">Tap a name to edit it. Each profile has separate food logs, workouts, weight tracking, and goals.</div>
     <button class="btn" id="viewMyProfile" style="margin-bottom:14px">View ${esc(S.profile.name)}'s stats & settings</button>
-    <h3 style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px">Switch to</h3>
+    <h3 style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px">Switch profile</h3>
     <div class="scroll">
       ${profiles.map(p=>{
         const isActive=p.id===currentId;
         // Try to load profile to show basic info
-        let info="";
+        let info="",displayName="";
         try{
           const raw=localStorage.getItem(getProfileKey(p.id));
           if(raw){
             const data=JSON.parse(raw);
+            displayName=data.profile.name||p.name;
             const wc=Object.keys(data.workLog||{}).filter(k=>data.workLog[k].done).length;
             const fc=Object.keys(data.foodLog||{}).filter(k=>(data.foodLog[k]||[]).length>0).length;
             info=`${wc} workouts · ${fc} food days`;
           }else{
+            displayName=p.name;
             info="Not set up yet";
           }
         }catch(e){
+          displayName=p.name;
           info="Not set up yet";
         }
         return `<button class="srow" data-switch="${p.id}" ${isActive?'style="opacity:0.6;cursor:default"':''}>
           <div class="sn">
-            <b>${esc(p.name)} ${isActive?'✓':''}</b>
+            <b><button class="act" data-edit-profile="${p.id}" style="padding:0;color:var(--gold)">${esc(displayName)}</button> ${isActive?'✓':''}</b>
             <span>${info}</span>
           </div>
           ${!isActive?'<div class="chip">Switch</div>':''}
@@ -2229,6 +2232,37 @@ function openProfilePicker(){
     paintDate();
     window.scrollTo(0,0);
   };
+  
+  document.querySelectorAll("[data-edit-profile]").forEach(b=>{
+    b.onclick=(e)=>{
+      e.stopPropagation();
+      const pid=b.dataset.editProfile;
+      // Load the profile
+      let profData;
+      try{
+        const raw=localStorage.getItem(getProfileKey(pid));
+        if(raw)profData=JSON.parse(raw);
+      }catch(e){}
+      if(!profData)profData=freshState(profiles.find(p=>p.id===pid).name);
+      
+      openSheet(`<h2>Edit profile name</h2>
+        <div class="frow"><div><label class="fl">Name</label><input id="profName" value="${esc(profData.profile.name)}" placeholder="Name"></div></div>
+        <button class="btn" id="profSave">Save</button>`);
+      el("profSave").onclick=()=>{
+        const newName=el("profName").value.trim();
+        if(!newName){toast("Enter a name");return;}
+        profData.profile.name=newName;
+        try{localStorage.setItem(getProfileKey(pid),JSON.stringify(profData));}catch(e){}
+        if(pid===currentId){
+          S.profile.name=newName;
+          updateLv();
+        }
+        closeSheet();
+        toast("Profile name updated");
+        setTimeout(()=>openProfilePicker(),300);
+      };
+    };
+  });
   
   document.querySelectorAll("[data-switch]").forEach(b=>{
     const pid=b.dataset.switch;
