@@ -2,6 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const Groq = require("groq-sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
@@ -43,7 +45,7 @@ async function groqWithFallback(fn) {
   throw lastErr;
 }
 
-// ── AI label scan ─────────────────────────────────────────────────────────────
+// ── AI label scan with Gemini → ChatGPT → Groq fallback ─────────────────────
 app.post("/api/scan", async (req, res) => {
   const { imageBase64 } = req.body;
   if (!imageBase64) return res.status(400).json({ ok: false, error: "No image provided" });
@@ -75,7 +77,92 @@ CRITICAL INSTRUCTIONS:
   }
 }`;
 
+  const imageUrl = imageBase64.startsWith("data:")
+    ? imageBase64
+    : `data:image/jpeg;base64,${imageBase64}`;
+
+  let lastError;
+
+  // 1. Try Gemini first
+  if (process.env.GEMINI_KEY) {
+    try {
+      console.log("Trying Gemini...");
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: imageUrl.split(",")[1],
+            mimeType: "image/jpeg",
+          },
+        },
+      ]);
+      
+      const text = result.response.text();
+      console.log("Gemini response:", text);
+      
+      let clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if (jsonMatch) clean = jsonMatch[0];
+      
+      const parsed = JSON.parse(clean);
+      if (parsed.per100 && typeof parsed.per100.k === 'number') {
+        console.log("✓ Gemini success");
+        return res.json({ ok: true, data: parsed, ai: "gemini" });
+      }
+    } catch (e) {
+      lastError = e;
+      console.log("Gemini failed:", e.message);
+    }
+  }
+
+  // 2. Try ChatGPT (OpenAI)
+  if (process.env.OPENAI_KEY) {
+    try {
+      console.log("Trying ChatGPT...");
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: imageUrl },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1024,
+        temperature: 0,
+      });
+      
+      const text = response.choices[0]?.message?.content || "";
+      console.log("ChatGPT response:", text);
+      
+      let clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if (jsonMatch) clean = jsonMatch[0];
+      
+      const parsed = JSON.parse(clean);
+      if (parsed.per100 && typeof parsed.per100.k === 'number') {
+        console.log("✓ ChatGPT success");
+        return res.json({ ok: true, data: parsed, ai: "chatgpt" });
+      }
+    } catch (e) {
+      lastError = e;
+      console.log("ChatGPT failed:", e.message);
+    }
+  }
+
+  // 3. Try Groq as last resort
   try {
+    console.log("Trying Groq...");
     const result = await groqWithFallback(async (groq) => {
       const chat = await groq.chat.completions.create({
         model: "llama-3.2-90b-vision-preview",
@@ -86,11 +173,7 @@ CRITICAL INSTRUCTIONS:
               { type: "text", text: prompt },
               {
                 type: "image_url",
-                image_url: {
-                  url: imageBase64.startsWith("data:")
-                    ? imageBase64
-                    : `data:image/jpeg;base64,${imageBase64}`,
-                },
+                image_url: { url: imageUrl },
               },
             ],
           },
@@ -101,35 +184,29 @@ CRITICAL INSTRUCTIONS:
       return chat.choices[0]?.message?.content || "";
     });
 
-    console.log("Raw AI response:", result);
-
-    // strip markdown fences and extract JSON
+    console.log("Groq response:", result);
+    
     let clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    
-    // Try to find JSON in response if wrapped in text
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      clean = jsonMatch[0];
-    }
-
-    const parsed = JSON.parse(clean);
+    if (jsonMatch) clean = jsonMatch[0];
     
-    // Validate required fields
-    if (!parsed.per100 || typeof parsed.per100.k !== 'number') {
-      throw new Error("Invalid response format");
+    const parsed = JSON.parse(clean);
+    if (parsed.per100 && typeof parsed.per100.k === 'number') {
+      console.log("✓ Groq success");
+      return res.json({ ok: true, data: parsed, ai: "groq" });
     }
-
-    console.log("Parsed data:", JSON.stringify(parsed, null, 2));
-    res.json({ ok: true, data: parsed });
   } catch (e) {
-    console.error("Scan error:", e.message);
-    console.error("Stack:", e.stack);
-    res.json({ 
-      ok: false, 
-      error: "AI couldn't read the label clearly",
-      debug: e.message 
-    });
+    lastError = e;
+    console.log("Groq failed:", e.message);
   }
+
+  // All failed
+  console.error("All AI providers failed. Last error:", lastError);
+  res.json({ 
+    ok: false, 
+    error: "AI couldn't read the label clearly - try a clearer photo",
+    debug: lastError?.message || "all providers failed"
+  });
 });
 
 // ── Sync endpoints ────────────────────────────────────────────────────────────
