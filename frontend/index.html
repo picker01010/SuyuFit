@@ -1090,7 +1090,17 @@ async function ocrFlow(file,meal){
     });
     const j=await r.json();
     if(!j.ok||!j.data)throw new Error(j.error||"no data");
-    openLabelConfirm(j.data,meal);
+    
+    // Skip confirmation, save directly and open quantity selector
+    const d=j.data;
+    const p=d.per100||{};
+    const nf={id:"lb_"+uid(),n:d.name||"Scanned food",
+      k:+p.k||0,p:+p.p||0,c:+p.c||0,f:+p.f||0,
+      fi:+p.fi||0,su:+p.su||0,na:+p.na||0,kk:0,ca:0,fe:0,vc:0,
+      sv:{l:(d.serving&&d.serving.label)||"1 serving",g:+(d.serving&&d.serving.grams)||100}};
+    S.customFoods.push(nf);
+    save();
+    openQty(nf.id,meal);
   }catch(e){
     closeSheet();
     toast("AI couldn't read it — type it in manually");
