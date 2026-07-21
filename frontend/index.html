@@ -308,7 +308,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 <body>
 
 <header>
-  <div class="brand"><svg viewBox="0 0 512 512" width="24" height="24" aria-hidden="true"><rect width="512" height="512" rx="118" fill="#000" stroke="rgba(180,154,252,.55)" stroke-width="16"/><text x="238" y="392" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-style="italic" font-size="380" fill="#B49AFC">S</text></svg>Suyu<span>Fit</span> <em class="lv num" id="lvBadge">LV 1</em></div>
+  <div class="brand"><svg viewBox="0 0 512 512" width="24" height="24" aria-hidden="true"><rect width="512" height="512" rx="118" fill="#000" stroke="rgba(180,154,252,.55)" stroke-width="16"/><text x="238" y="392" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-style="italic" font-size="380" fill="#B49AFC">S</text></svg>Suyu<span>Fit</span> <em class="lv num" id="lvBadge">LV 1</em><span id="profileIndicator" style="font-size:11px;color:var(--mut);margin-left:8px;font-weight:500"></span></div>
   <div class="datebar" id="datebar">
     <button id="dPrev" aria-label="Previous day">‹</button>
     <div class="dlabel today" id="dLabel">Today</div>
@@ -524,19 +524,40 @@ function defaultPlan(){
 }
 
 /* ================= STATE & STORAGE ================= */
-const APP_VER="v18";
+const APP_VER="v19_multiprofile";
 const LS_KEY="suyufit_v1";
+const LS_CURRENT_PROFILE="suyufit_current_profile";
 let mem={};
+
+function getCurrentProfileId(){
+  try{
+    const id=localStorage.getItem(LS_CURRENT_PROFILE);
+    return id||"profile1";
+  }catch(e){return "profile1";}
+}
+
+function setCurrentProfileId(id){
+  try{localStorage.setItem(LS_CURRENT_PROFILE,id);}catch(e){}
+}
+
+function getProfileKey(profileId){
+  return LS_KEY+"_"+profileId;
+}
+
 function loadState(){
-  try{const raw=localStorage.getItem(LS_KEY); if(raw) return JSON.parse(raw);}catch(e){}
+  const profileId=getCurrentProfileId();
+  try{const raw=localStorage.getItem(getProfileKey(profileId)); if(raw) return JSON.parse(raw);}catch(e){}
   return null;
 }
+
 function save(){
-  try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch(e){mem=S;}
+  const profileId=getCurrentProfileId();
+  try{localStorage.setItem(getProfileKey(profileId),JSON.stringify(S));}catch(e){mem=S;}
 }
-function freshState(){
+
+function freshState(profileName){
   return {
-    profile:{name:"Suyu",sex:"m",age:25,h:172,w:70,act:1.45,goal:"recomp"},
+    profile:{name:profileName||"User",sex:"m",age:25,h:172,w:70,act:1.45,goal:"recomp"},
     targets:null, // null = auto
     foodLog:{}, customFoods:[], recents:[],
     plan:defaultPlan(),
@@ -544,26 +565,46 @@ function freshState(){
     workLog:{}, weightLog:[], habits:{}, onboarded:false, planVer:2
   };
 }
-let S=loadState()||freshState();
-// migrate: v2 = aesthetic hypertrophy program
-if(!S.habits)S.habits={};
-if(!S.plan||!S.plan.length)S.plan=defaultPlan();
-if(!S.schedule)S.schedule={Mon:"push",Tue:"pull",Wed:null,Thu:"upperm",Fri:"legs",Sat:"arms",Sun:null};
-if(!S.customFoods)S.customFoods=[];
-if(!S.foodLog)S.foodLog={};
-if(!S.workLog)S.workLog={};
-if(!S.weightLog)S.weightLog=[];
-if(!S.recents)S.recents=[];
-if(!S.combos)S.combos=[];
-if(!S.measures)S.measures=[];
-if(!S.seenAch)S.seenAch=[];
-if(S.goal===undefined)S.goal=null;
-if(S.planVer!==2){
-  S.plan=defaultPlan();
-  S.schedule={Mon:"push",Tue:"pull",Wed:null,Thu:"upperm",Fri:"legs",Sat:"arms",Sun:null};
-  S.planVer=2;
+
+function switchProfile(newProfileId,newProfileName){
+  // Save current state first
   save();
+  // Switch to new profile
+  setCurrentProfileId(newProfileId);
+  // Load new profile state
+  S=loadState()||freshState(newProfileName);
+  // Migrate if needed
+  migrateState();
+  save();
+  // Re-render everything
+  renderAll();
+  toast("Switched to "+S.profile.name);
 }
+
+let S=loadState()||freshState();
+// Migration function
+function migrateState(){
+  if(!S.habits)S.habits={};
+  if(!S.plan||!S.plan.length)S.plan=defaultPlan();
+  if(!S.schedule)S.schedule={Mon:"push",Tue:"pull",Wed:null,Thu:"upperm",Fri:"legs",Sat:"arms",Sun:null};
+  if(!S.customFoods)S.customFoods=[];
+  if(!S.foodLog)S.foodLog={};
+  if(!S.workLog)S.workLog={};
+  if(!S.weightLog)S.weightLog=[];
+  if(!S.recents)S.recents=[];
+  if(!S.combos)S.combos=[];
+  if(!S.measures)S.measures=[];
+  if(!S.seenAch)S.seenAch=[];
+  if(S.goal===undefined)S.goal=null;
+  if(S.planVer!==2){
+    S.plan=defaultPlan();
+    S.schedule={Mon:"push",Tue:"pull",Wed:null,Thu:"upperm",Fri:"legs",Sat:"arms",Sun:null};
+    S.planVer=2;
+  }
+}
+
+// Run migration on current state
+migrateState();
 
 /* ================= UTILS ================= */
 function uid(){return Math.random().toString(36).slice(2,9);}
@@ -1409,6 +1450,7 @@ function levelInfo(){
 }
 function updateLv(){
   const b=el("lvBadge");if(b)b.textContent="LV "+levelInfo().L;
+  const pi=el("profileIndicator");if(pi)pi.textContent="["+S.profile.name+"]";
   try{checkAchievements();}catch(_){}
 }
 function mchipsHTML(exName){
@@ -2138,6 +2180,70 @@ function onboard(){
   };
 }
 
+/* ================= PROFILE SWITCHER ================= */
+function openProfilePicker(){
+  const currentId=getCurrentProfileId();
+  const profiles=[
+    {id:"profile1",name:"Suyu"},
+    {id:"profile2",name:"Partner"}
+  ];
+  openSheet(`
+    <h2>Profile</h2>
+    <div class="note" style="margin-bottom:10px">Each profile has separate food logs, workouts, weight tracking, and goals. The workout plan and schedule are shared.</div>
+    <button class="btn" id="viewMyProfile" style="margin-bottom:14px">View ${esc(S.profile.name)}'s stats & settings</button>
+    <h3 style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px">Switch to</h3>
+    <div class="scroll">
+      ${profiles.map(p=>{
+        const isActive=p.id===currentId;
+        // Try to load profile to show basic info
+        let info="";
+        try{
+          const raw=localStorage.getItem(getProfileKey(p.id));
+          if(raw){
+            const data=JSON.parse(raw);
+            const wc=Object.keys(data.workLog||{}).filter(k=>data.workLog[k].done).length;
+            const fc=Object.keys(data.foodLog||{}).filter(k=>(data.foodLog[k]||[]).length>0).length;
+            info=`${wc} workouts · ${fc} food days`;
+          }else{
+            info="Not set up yet";
+          }
+        }catch(e){
+          info="Not set up yet";
+        }
+        return `<button class="srow" data-switch="${p.id}" ${isActive?'style="opacity:0.6;cursor:default"':''}>
+          <div class="sn">
+            <b>${esc(p.name)} ${isActive?'✓':''}</b>
+            <span>${info}</span>
+          </div>
+          ${!isActive?'<div class="chip">Switch</div>':''}
+        </button>`;
+      }).join("")}
+    </div>`);
+  
+  el("viewMyProfile").onclick=()=>{
+    closeSheet();
+    curTab="me";
+    document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("on",x.dataset.tab==="me"));
+    document.querySelectorAll(".tabpage").forEach(p=>p.classList.toggle("on",p.id==="page-me"));
+    renderMe();
+    paintDate();
+    window.scrollTo(0,0);
+  };
+  
+  document.querySelectorAll("[data-switch]").forEach(b=>{
+    const pid=b.dataset.switch;
+    if(pid===currentId){
+      b.onclick=null;
+      return;
+    }
+    b.onclick=()=>{
+      const profile=profiles.find(p=>p.id===pid);
+      closeSheet();
+      switchProfile(pid,profile.name);
+    };
+  });
+}
+
 /* ================= NAV / DATE / BOOT ================= */
 let curTab="today";
 function renderAll(){renderToday();renderGym();renderPlan();renderMe();paintDate();updateLv();}
@@ -2150,10 +2256,18 @@ function paintDate(){
 el("dPrev").onclick=()=>{viewDate.setDate(viewDate.getDate()-1);gymDayId=null;renderAll();};
 el("dNext").onclick=()=>{if(!isToday()){viewDate.setDate(viewDate.getDate()+1);gymDayId=null;renderAll();}};
 document.querySelectorAll("#tabbar button").forEach(b=>b.onclick=()=>{
-  curTab=b.dataset.tab;
+  const tab=b.dataset.tab;
+  
+  // Special handling for Me tab - show profile picker
+  if(tab==="me"){
+    openProfilePicker();
+    return;
+  }
+  
+  curTab=tab;
   document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll(".tabpage").forEach(p=>p.classList.toggle("on",p.id==="page-"+curTab));
-  ({today:renderToday,gym:renderGym,plan:renderPlan,me:renderMe})[curTab]();
+  ({today:renderToday,gym:renderGym,plan:renderPlan})[curTab]();
   paintDate();updateLv();window.scrollTo(0,0);
 });
 
