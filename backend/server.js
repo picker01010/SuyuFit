@@ -82,13 +82,24 @@ Respond with ONLY this JSON, nothing else:
   }
 }`;
 
-  const imageUrl = imageBase64.startsWith("data:") ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+  let imageUrl = imageBase64;
+  
+  // Ensure proper data URL format
+  if (!imageUrl.startsWith("data:")) {
+    // Check if it's raw base64
+    if (imageUrl.match(/^[A-Za-z0-9+/=]+$/)) {
+      imageUrl = `data:image/jpeg;base64,${imageUrl}`;
+    }
+  }
+
   const errors = [];
 
   // Try OpenAI first (best for vision)
   if (process.env.OPENAI_KEY) {
     try {
       console.log("→ Trying OpenAI...");
+      console.log("Image URL format:", imageUrl.substring(0, 50) + "...");
+      
       const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -96,7 +107,7 @@ Respond with ONLY this JSON, nothing else:
           role: "user",
           content: [
             { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: imageUrl } }
+            { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
           ]
         }],
         max_tokens: 1024,
@@ -104,7 +115,7 @@ Respond with ONLY this JSON, nothing else:
       });
       
       const text = response.choices[0]?.message?.content || "";
-      console.log("OpenAI response:", text.substring(0, 200));
+      console.log("OpenAI full response:", text);
       const match = text.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]);
@@ -113,14 +124,13 @@ Respond with ONLY this JSON, nothing else:
           return res.json({ ok: true, data: parsed, ai: "openai" });
         }
       }
+      throw new Error("No valid JSON in response");
     } catch (e) {
       errors.push(`OpenAI: ${e.message}`);
       console.log("✗ OpenAI failed:", e.message);
+      console.log("Full error:", JSON.stringify(e, null, 2));
     }
   }
-
-  // Try Groq (text-only, skip vision)
-  console.log("Groq vision models decommissioned, skipping");
 
   // Try Gemini (has free tier with vision)
   if (process.env.GEMINI_KEY) {
@@ -129,9 +139,13 @@ Respond with ONLY this JSON, nothing else:
       const { GoogleGenerativeAI } = require("@google/generative-ai");
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      // Extract base64 data
+      const base64Data = imageUrl.includes(",") ? imageUrl.split(",")[1] : imageUrl;
+      
       const result = await model.generateContent([
         prompt,
-        { inlineData: { data: imageUrl.split(",")[1] || imageUrl, mimeType: "image/jpeg" } }
+        { inlineData: { data: base64Data, mimeType: "image/jpeg" } }
       ]);
       
       const text = result.response.text();
@@ -144,16 +158,19 @@ Respond with ONLY this JSON, nothing else:
           return res.json({ ok: true, data: parsed, ai: "gemini" });
         }
       }
+      throw new Error("No valid JSON in response");
     } catch (e) {
       errors.push(`Gemini: ${e.message}`);
       console.log("✗ Gemini failed:", e.message);
+      console.log("Full error:", JSON.stringify(e, null, 2));
     }
   }
 
+  // No working providers
   console.error("ALL PROVIDERS FAILED:", errors);
   res.json({ 
     ok: false, 
-    error: "Could not read label. Check photo quality and lighting.",
+    error: "Could not read label. Try a clearer photo with better lighting.",
     debug: errors.join(" | ")
   });
 });
