@@ -14,19 +14,27 @@ async function testScan() {
       body: JSON.stringify({ imageBase64: testImage })
     });
     
+    if (!response.ok) {
+      console.log("HTTP Error:", response.status, response.statusText);
+      const text = await response.text();
+      console.log("Response body:", text);
+      return;
+    }
+    
     const result = await response.json();
     console.log("Response:", JSON.stringify(result, null, 2));
     
     if (result.ok) {
-      console.log("\n✓ SUCCESS! AI provider:", result.ai);
+      console.log("\n✅ SUCCESS! AI provider:", result.ai);
       console.log("Product:", result.data.name);
       console.log("Per 100g - kcal:", result.data.per100.k, "p:", result.data.per100.p, "c:", result.data.per100.c, "f:", result.data.per100.f);
     } else {
-      console.log("\n✗ FAILED:", result.error);
+      console.log("\n❌ FAILED:", result.error);
       console.log("Debug:", result.debug);
     }
   } catch (e) {
-    console.error("Error:", e.message);
+    console.error("❌ Error:", e.message);
+    console.error(e);
   }
 }
 

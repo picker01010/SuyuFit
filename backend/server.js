@@ -1,9 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const Groq = require("groq-sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const OpenAI = require("openai");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
@@ -19,160 +17,134 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_URL.startsWith('http')) {
   );
 }
 
-// ── Groq key rotation ─────────────────────────────────────────────────────────
-const GROQ_KEYS = [
-  process.env.GROQ_KEY_1,
-  process.env.GROQ_KEY_2,
-  process.env.GROQ_KEY_3,
+// ── Gemini key rotation (4 KEYS FOR MAXIMUM POWER) ────────────────────────────
+const GEMINI_KEYS = [
+  process.env.GEMINI_KEY,
+  process.env.GEMINI_KEY_2,
+  process.env.GEMINI_KEY_3,
+  process.env.GEMINI_KEY_4,
 ].filter(Boolean);
 
+console.log(`🚀 Loaded ${GEMINI_KEYS.length} Gemini keys`);
+
 let keyIdx = 0;
-function nextGroqClient() {
-  const key = GROQ_KEYS[keyIdx % GROQ_KEYS.length];
+function nextGeminiKey() {
+  const key = GEMINI_KEYS[keyIdx % GEMINI_KEYS.length];
   keyIdx++;
-  return new Groq({ apiKey: key });
+  return key;
 }
 
-async function groqWithFallback(fn) {
+async function geminiWithFallback(fn) {
   let lastErr;
-  for (let attempt = 0; attempt < GROQ_KEYS.length; attempt++) {
+  for (let attempt = 0; attempt < GEMINI_KEYS.length; attempt++) {
+    const key = nextGeminiKey();
     try {
-      return await fn(nextGroqClient());
+      return await fn(key);
     } catch (e) {
       lastErr = e;
-      // rate-limit or quota → try next key
-      if (e?.status === 429 || e?.status === 402) continue;
+      console.log(`❌ Gemini key ${attempt + 1} failed:`, e.message);
+      // If quota/rate limit, try next key
+      if (e.message?.includes("quota") || e.message?.includes("rate")) {
+        console.log(`→ Trying next key...`);
+        continue;
+      }
+      // Other errors, throw immediately
       throw e;
     }
   }
   throw lastErr;
 }
 
-// ── AI label scan - SIMPLIFIED AND WORKING ─────────────────────────────────
+// ── AI NUTRITION SCANNER (GEMINI ONLY) ────────────────────────────────────────
 app.post("/api/scan", async (req, res) => {
   const { imageBase64 } = req.body;
   if (!imageBase64) return res.status(400).json({ ok: false, error: "No image provided" });
 
-  const prompt = `You are a nutrition label reader. Extract ALL nutrition facts from this image.
+  console.log("📸 New scan request received");
 
-Look for:
-- Product name
-- Serving size in grams
-- Calories (kcal)
-- Protein, Carbs, Fat in grams
-- Fiber, Sugar, Sodium if shown
+  const prompt = `You are an expert nutrition label reader. Extract ALL nutrition information from this food label image.
 
-Convert everything to per 100g values.
+INSTRUCTIONS:
+1. Find the product name
+2. Find "Serving size" and extract grams (e.g., "28g" or "About 15 chips (28g)")
+3. Find "Calories" or "Energy" - get the kcal value
+4. Find: Protein, Total Carbohydrate, Total Fat (in grams)
+5. Find if available: Fiber, Sugar, Sodium (in mg)
+6. Convert ALL values to per 100g basis: (value / serving_grams) × 100
 
-Respond with ONLY this JSON, nothing else:
+Return ONLY this JSON, no extra text:
 {
-  "name": "product name",
+  "name": "product name from package",
   "per100": {
-    "k": 500,
-    "p": 20,
-    "c": 60,
-    "f": 15,
-    "fi": 5,
-    "su": 10,
-    "na": 300
+    "k": calories_per_100g,
+    "p": protein_per_100g,
+    "c": carbs_per_100g,
+    "f": fat_per_100g,
+    "fi": fiber_per_100g_or_0,
+    "su": sugar_per_100g_or_0,
+    "na": sodium_mg_per_100g_or_0
   },
   "serving": {
-    "label": "1 serving (30g)",
-    "grams": 30
+    "label": "serving size text from label",
+    "grams": serving_size_in_grams
   }
 }`;
 
-  let imageUrl = imageBase64;
+  let imageData = imageBase64;
   
-  // Ensure proper data URL format
-  if (!imageUrl.startsWith("data:")) {
-    // Check if it's raw base64
-    if (imageUrl.match(/^[A-Za-z0-9+/=]+$/)) {
-      imageUrl = `data:image/jpeg;base64,${imageUrl}`;
-    }
+  // Extract base64 data (remove data:image/... prefix if present)
+  if (imageData.includes(",")) {
+    imageData = imageData.split(",")[1];
   }
 
-  const errors = [];
-
-  // Try OpenAI first (best for vision)
-  if (process.env.OPENAI_KEY) {
-    try {
-      console.log("→ Trying OpenAI...");
-      console.log("Image URL format:", imageUrl.substring(0, 50) + "...");
+  try {
+    const result = await geminiWithFallback(async (apiKey) => {
+      console.log(`🔑 Trying Gemini API...`);
       
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
-          ]
-        }],
-        max_tokens: 1024,
-        temperature: 0
-      });
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       
-      const text = response.choices[0]?.message?.content || "";
-      console.log("OpenAI full response:", text);
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.per100?.k) {
-          console.log("✓ OpenAI SUCCESS");
-          return res.json({ ok: true, data: parsed, ai: "openai" });
-        }
-      }
-      throw new Error("No valid JSON in response");
-    } catch (e) {
-      errors.push(`OpenAI: ${e.message}`);
-      console.log("✗ OpenAI failed:", e.message);
-      console.log("Full error:", JSON.stringify(e, null, 2));
-    }
-  }
-
-  // Try Gemini (has free tier with vision)
-  if (process.env.GEMINI_KEY) {
-    try {
-      console.log("→ Trying Gemini...");
-      const { GoogleGenerativeAI } = require("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      
-      // Extract base64 data
-      const base64Data = imageUrl.includes(",") ? imageUrl.split(",")[1] : imageUrl;
-      
-      const result = await model.generateContent([
+      const response = await model.generateContent([
         prompt,
-        { inlineData: { data: base64Data, mimeType: "image/jpeg" } }
+        {
+          inlineData: {
+            data: imageData,
+            mimeType: "image/jpeg",
+          },
+        },
       ]);
       
-      const text = result.response.text();
-      console.log("Gemini response:", text.substring(0, 200));
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.per100?.k) {
-          console.log("✓ Gemini SUCCESS");
-          return res.json({ ok: true, data: parsed, ai: "gemini" });
-        }
+      const text = response.response.text();
+      console.log("📝 Gemini response:", text.substring(0, 300));
+      
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON found in response");
       }
-      throw new Error("No valid JSON in response");
-    } catch (e) {
-      errors.push(`Gemini: ${e.message}`);
-      console.log("✗ Gemini failed:", e.message);
-      console.log("Full error:", JSON.stringify(e, null, 2));
-    }
-  }
+      
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Validate response has required fields
+      if (!parsed.per100 || typeof parsed.per100.k !== 'number') {
+        throw new Error("Invalid response format - missing nutrition data");
+      }
+      
+      console.log("✅ SUCCESS! Extracted:", parsed.name);
+      return parsed;
+    });
 
-  // No working providers
-  console.error("ALL PROVIDERS FAILED:", errors);
-  res.json({ 
-    ok: false, 
-    error: "Could not read label. Try a clearer photo with better lighting.",
-    debug: errors.join(" | ")
-  });
+    res.json({ ok: true, data: result, ai: "gemini" });
+    
+  } catch (e) {
+    console.error("❌ ALL GEMINI KEYS FAILED:", e.message);
+    console.error("Full error:", e);
+    res.json({ 
+      ok: false, 
+      error: "Could not read the label. Try a clearer, well-lit photo showing the nutrition facts clearly.",
+      debug: e.message
+    });
+  }
 });
 
 // ── Sync endpoints ────────────────────────────────────────────────────────────
