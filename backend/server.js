@@ -250,5 +250,16 @@ app.get("/api/sync/:userId", async (req, res) => {
 // Health check (UptimeRobot pings this)
 app.get("/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Debug endpoint to check which AI providers are configured
+app.get("/api/debug/providers", (_req, res) => {
+  res.json({
+    gemini: !!process.env.GEMINI_KEY,
+    openai: !!process.env.OPENAI_KEY,
+    groq: GROQ_KEYS.length,
+    geminiPrefix: process.env.GEMINI_KEY?.substring(0, 10),
+    openaiPrefix: process.env.OPENAI_KEY?.substring(0, 15),
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`SuyuFit backend running on ${PORT}`));
