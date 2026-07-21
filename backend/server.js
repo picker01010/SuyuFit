@@ -90,18 +90,16 @@ CRITICAL INSTRUCTIONS:
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: imageUrl.split(",")[1],
-            mimeType: "image/jpeg",
-          },
+      const imageParts = [{
+        inlineData: {
+          data: imageUrl.split(",")[1] || imageUrl,
+          mimeType: "image/jpeg",
         },
-      ]);
+      }];
       
+      const result = await model.generateContent([prompt, ...imageParts]);
       const text = result.response.text();
-      console.log("Gemini response:", text);
+      console.log("Gemini raw response:", text);
       
       let clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const jsonMatch = clean.match(/\{[\s\S]*\}/);
@@ -112,10 +110,16 @@ CRITICAL INSTRUCTIONS:
         console.log("✓ Gemini success");
         return res.json({ ok: true, data: parsed, ai: "gemini" });
       }
+      throw new Error("Invalid Gemini response format");
     } catch (e) {
       lastError = e;
       console.log("Gemini failed:", e.message);
+      if (e.message?.includes("API_KEY")) {
+        console.log("Gemini API key invalid, skipping to next provider");
+      }
     }
+  } else {
+    console.log("No Gemini key found, skipping");
   }
 
   // 2. Try ChatGPT (OpenAI)
@@ -143,7 +147,7 @@ CRITICAL INSTRUCTIONS:
       });
       
       const text = response.choices[0]?.message?.content || "";
-      console.log("ChatGPT response:", text);
+      console.log("ChatGPT raw response:", text);
       
       let clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const jsonMatch = clean.match(/\{[\s\S]*\}/);
@@ -154,50 +158,61 @@ CRITICAL INSTRUCTIONS:
         console.log("✓ ChatGPT success");
         return res.json({ ok: true, data: parsed, ai: "chatgpt" });
       }
+      throw new Error("Invalid ChatGPT response format");
     } catch (e) {
       lastError = e;
       console.log("ChatGPT failed:", e.message);
+      if (e.status === 401) {
+        console.log("ChatGPT API key invalid, skipping to next provider");
+      }
     }
+  } else {
+    console.log("No OpenAI key found, skipping");
   }
 
   // 3. Try Groq as last resort
-  try {
-    console.log("Trying Groq...");
-    const result = await groqWithFallback(async (groq) => {
-      const chat = await groq.chat.completions.create({
-        model: "llama-3.2-90b-vision-preview",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: { url: imageUrl },
-              },
-            ],
-          },
-        ],
-        max_tokens: 1024,
-        temperature: 0,
+  if (GROQ_KEYS.length > 0) {
+    try {
+      console.log("Trying Groq...");
+      const result = await groqWithFallback(async (groq) => {
+        const chat = await groq.chat.completions.create({
+          model: "llama-3.2-90b-vision-preview",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                {
+                  type: "image_url",
+                  image_url: { url: imageUrl },
+                },
+              ],
+            },
+          ],
+          max_tokens: 1024,
+          temperature: 0,
+        });
+        return chat.choices[0]?.message?.content || "";
       });
-      return chat.choices[0]?.message?.content || "";
-    });
 
-    console.log("Groq response:", result);
-    
-    let clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    if (jsonMatch) clean = jsonMatch[0];
-    
-    const parsed = JSON.parse(clean);
-    if (parsed.per100 && typeof parsed.per100.k === 'number') {
-      console.log("✓ Groq success");
-      return res.json({ ok: true, data: parsed, ai: "groq" });
+      console.log("Groq raw response:", result);
+      
+      let clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if (jsonMatch) clean = jsonMatch[0];
+      
+      const parsed = JSON.parse(clean);
+      if (parsed.per100 && typeof parsed.per100.k === 'number') {
+        console.log("✓ Groq success");
+        return res.json({ ok: true, data: parsed, ai: "groq" });
+      }
+      throw new Error("Invalid Groq response format");
+    } catch (e) {
+      lastError = e;
+      console.log("Groq failed:", e.message);
     }
-  } catch (e) {
-    lastError = e;
-    console.log("Groq failed:", e.message);
+  } else {
+    console.log("No Groq keys found, skipping");
   }
 
   // All failed
