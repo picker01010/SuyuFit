@@ -1,89 +1,83 @@
-# SuyuFit
+# SuyuFit 💪
 
-Full-stack fitness tracking app with AI-powered nutrition label scanning.
+A modern, AI-powered fitness tracking progressive web app (PWA) with nutrition label scanning, workout logging, and body composition tracking.
 
-## Structure
+## Quick Start
 
-- **frontend/** - Web PWA (Vercel)
-- **backend/** - Node/Express API (Render)
-- **mobile/** - Expo React Native app
+**For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md)**
 
 ## Features
 
-- 🔍 AI label scanning (Groq Vision API with key rotation)
-- 🍽️ Food tracking with macro breakdown
-- 💪 Workout logging
-- 📊 Daily macro targets & progress
-- 📱 Cross-platform (web + mobile)
-- 🔄 Data sync via backend
+### 🍽️ Food Tracking
+- AI nutrition label scanner (take photo → auto-fill macros)
+- Extensive food database (Indian + Western foods)
+- Create custom foods
+- Save meal combos for quick logging
+- Macro targets based on TDEE calculation
+
+### 💪 Gym Tracking
+- Pre-built workout plans (Push/Pull/Legs)
+- Progressive overload coaching (auto-suggests weight increases)
+- Rest timer with notifications
+- Exercise history and charts
+- 1RM estimation
+
+### 📊 Progress Tracking
+- Weight logging with trend analysis
+- Body measurements (waist, chest, arms)
+- Progress photos (stored locally)
+- Goal setting with smart calorie adjustment
+- Weekly reports
+
+### 👥 Multi-Profile
+- Up to 10 profiles per device
+- Netflix-style profile switcher
+- Separate data per profile
+
+### 📱 PWA Features
+- Install as app on mobile
+- Offline capable
+- Push notifications for rest timer
 
 ## Tech Stack
 
-- Frontend: Vanilla JS PWA
-- Backend: Node.js, Express, Groq AI
-- Mobile: React Native (Expo)
-- Database: Supabase (PostgreSQL)
-- Hosting: Vercel (frontend), Render (backend)
-
-## Setup
-
-### Backend
-```bash
-cd backend
-npm install
-# Add .env with Groq keys and Supabase URL
-npm start
-```
-
-### Frontend
-```bash
-cd frontend
-# Update BACKEND_URL in index.html
-# Deploy to Vercel or serve locally
-```
-
-### Mobile
-```bash
-cd mobile
-npm install
-npx expo start
-# Scan QR with Expo Go app
-```
+- **Frontend**: Vanilla JavaScript (no framework!), PWA
+- **Backend**: Node.js + Express
+- **AI**: Google Gemini 2.5 Flash (vision)
+- **Hosting**: Vercel (frontend) + Render (backend)
+- **Storage**: localStorage (local) + Supabase (optional sync)
 
 ## Deployment
 
-### Backend (Render)
-1. Create new Web Service
-2. Connect this repo
-3. Root directory: `backend`
-4. Build: `npm install`
-5. Start: `npm start`
-6. Add environment variables from `.env`
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete setup guide.
 
-### Frontend (Vercel)
-1. Import project
-2. Root directory: `frontend`
-3. Framework preset: Other
-4. No build command needed
-5. Deploy
+**Quick version:**
+1. Get 4 Google Gemini API keys
+2. Deploy backend to Render
+3. Deploy frontend to Vercel
+4. Done!
 
-### Mobile (Expo)
+## Development
+
 ```bash
-cd mobile
-eas build --platform android
-# or
-eas build --platform ios
+# Backend
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with your API keys
+node server.js
+
+# Frontend (in another terminal)
+cd frontend
+python -m http.server 8000
 ```
 
-## Environment Variables
+Open http://localhost:8000
 
-Backend needs:
-- `GROQ_API_KEY_1`, `GROQ_API_KEY_2`, `GROQ_API_KEY_3`
-- `SUPABASE_URL`, `SUPABASE_KEY`
-- `PORT` (defaults to 3000)
+## License
 
-## Uptime
+MIT
 
-Use UptimeRobot to ping backend every 5 minutes to prevent Render sleep:
-- Monitor: `https://suyufit-backend.onrender.com/health`
-- Interval: 5 minutes
+## Screenshots
+
+(Screenshots would go here if sharing publicly)

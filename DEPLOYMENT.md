@@ -1,175 +1,301 @@
-# Deployment Instructions
+# SuyuFit - Complete Deployment Guide
 
-## 1. Supabase Database Setup
+A modern fitness tracking PWA with AI-powered nutrition label scanning.
 
-1. Go to your Supabase project: https://supabase.com/dashboard/project/_/editor
-2. Open SQL Editor
-3. Copy the entire contents of `supabase-schema.sql`
-4. Run the SQL script
-5. Get your credentials:
-   - Project URL: Settings > API > Project URL
-   - Anon/Public Key: Settings > API > Project API keys > anon public
+## Features
+- 📸 AI nutrition label scanner (Gemini vision)
+- 🍽️ Food logging with macro tracking
+- 💪 Gym workout logger with progressive overload coaching
+- 📊 Body composition tracking (weight, measurements, photos)
+- 🎯 Goal setting and progress monitoring
+- 👥 Multi-profile support (up to 10 profiles)
+- 📱 PWA with offline support
 
-## 2. Backend Deployment (Render)
+---
 
-1. Go to https://dashboard.render.com/
-2. Click "New +" > "Web Service"
-3. Select "Build and deploy from a Git repository"
-4. Connect your GitHub account and select "SuyuFit" repo
-5. Configure:
-   - **Name**: `suyufit-backend`
+## Prerequisites
+
+You'll need accounts for:
+1. **Google AI Studio** - For AI label scanning (free tier: 15 requests/min)
+2. **Vercel** - Frontend hosting (free tier)
+3. **Render** - Backend hosting (free tier)
+4. **Supabase** (optional) - For cross-device sync
+
+---
+
+## Step 1: Get API Keys
+
+### Google Gemini API Keys (4 keys recommended)
+1. Go to https://aistudio.google.com/apikey
+2. Click "Create API key"
+3. Copy the key (starts with `AIza...` or `AQ.`)
+4. Repeat 3 more times for backup keys
+
+---
+
+## Step 2: Deploy Backend (Render)
+
+### 2.1: Create Render Account
+1. Go to https://render.com/
+2. Sign up with GitHub
+
+### 2.2: Create Web Service
+1. Click "New +" → "Web Service"
+2. Connect your GitHub repository
+3. Settings:
+   - **Name**: `suyufit-backend` (or your choice)
+   - **Region**: Choose closest to you
+   - **Branch**: `main`
    - **Root Directory**: `backend`
-   - **Environment**: `Node`
+   - **Runtime**: Node
    - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Plan**: Free
+   - **Start Command**: `node server.js`
+   - **Instance Type**: Free
 
-6. Add Environment Variables:
-   ```
-   GROQ_API_KEY_1=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
-   GROQ_API_KEY_2=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
-   GROQ_API_KEY_3=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
-   SUPABASE_URL=<your-supabase-url>
-   SUPABASE_KEY=<your-supabase-anon-key>
-   PORT=3000
-   ```
+### 2.3: Add Environment Variables
+In Render dashboard → Environment tab:
 
-7. Click "Create Web Service"
-8. Wait for deployment (3-5 minutes)
-9. Copy your backend URL (e.g., `https://suyufit-backend.onrender.com`)
+```
+GEMINI_KEY = your_first_gemini_key
+GEMINI_KEY_2 = your_second_gemini_key
+GEMINI_KEY_3 = your_third_gemini_key
+GEMINI_KEY_4 = your_fourth_gemini_key
+PORT = 3001
+```
 
-## 3. Frontend Deployment (Vercel)
+Optional (for cross-device sync):
+```
+SUPABASE_URL = your_supabase_url
+SUPABASE_SERVICE_KEY = your_supabase_service_key
+```
 
-1. Go to https://vercel.com/new
-2. Import Git Repository > Select "SuyuFit"
-3. Configure:
-   - **Project Name**: `suyufit`
+### 2.4: Deploy
+1. Click "Create Web Service"
+2. Wait 5-10 minutes for deployment
+3. Copy your backend URL (e.g., `https://suyufit-backend.onrender.com`)
+
+---
+
+## Step 3: Deploy Frontend (Vercel)
+
+### 3.1: Update Backend URL
+Edit `frontend/index.html`, line ~943:
+```javascript
+const BACKEND_URL="https://YOUR-BACKEND-URL.onrender.com";
+```
+
+### 3.2: Create Vercel Account
+1. Go to https://vercel.com/
+2. Sign up with GitHub
+
+### 3.3: Import Project
+1. Click "Add New..." → "Project"
+2. Import your GitHub repository
+3. Settings:
    - **Framework Preset**: Other
    - **Root Directory**: `frontend`
    - **Build Command**: (leave empty)
-   - **Output Directory**: (leave empty)
-   - **Install Command**: (leave empty)
+   - **Output Directory**: `.`
 
-4. **IMPORTANT**: Before deploying, update `frontend/index.html`
-   - Find line: `const BACKEND_URL = 'https://suyufit-backend.onrender.com';`
-   - Replace with your actual Render backend URL
+### 3.4: Deploy
+1. Click "Deploy"
+2. Wait 2-3 minutes
+3. Your app is live! (e.g., `https://suyufit.vercel.app`)
 
-5. Click "Deploy"
-6. Wait for deployment (1-2 minutes)
-7. Visit your site at `https://suyufit.vercel.app` (or your custom domain)
+---
 
-## 4. UptimeRobot Setup (Keep Backend Awake)
+## Step 4: Set Up PWA (Optional)
 
-1. Go to https://uptimerobot.com/
-2. Click "Add New Monitor"
-3. Configure:
-   - **Monitor Type**: HTTP(s)
-   - **Friendly Name**: SuyuFit Backend
-   - **URL**: `https://suyufit-backend.onrender.com/health`
-   - **Monitoring Interval**: 5 minutes
+On mobile:
+1. Open your Vercel URL in Chrome
+2. Tap menu ⋮ → "Add to Home screen"
+3. App installs like a native app!
 
-4. Click "Create Monitor"
-5. This will ping your backend every 5 minutes to prevent Render from sleeping
+---
 
-## 5. Mobile App Setup (Expo)
+## Step 5: Supabase Setup (Optional - for cross-device sync)
 
-### For Testing with Expo Go:
+### 5.1: Create Supabase Project
+1. Go to https://supabase.com/
+2. Sign up and create new project
+3. Wait for database to initialize
 
-1. Install Expo Go app on your phone:
-   - iOS: https://apps.apple.com/app/expo-go/id982107779
-   - Android: https://play.google.com/store/apps/details?id=host.exp.exponent
+### 5.2: Create Sync Table
+Go to SQL Editor and run:
 
-2. Update backend URL in mobile app:
-   - Open `mobile/src/screens/FoodScreen.js`
-   - Line 9: Change `BACKEND_URL` to your Render backend URL
+```sql
+create table sync (
+  user_id text primary key,
+  state jsonb not null,
+  updated_at timestamp with time zone default now()
+);
 
-3. Start the dev server:
-   ```bash
-   cd mobile
-   npm install
-   npx expo start
-   ```
+alter table sync enable row level security;
+```
 
-4. Scan the QR code with Expo Go
+### 5.3: Get Credentials
+Project Settings → API:
+- Copy **Project URL** → Add to Render as `SUPABASE_URL`
+- Copy **service_role key** → Add to Render as `SUPABASE_SERVICE_KEY`
 
-### For Production Build (Android):
+---
 
-1. Install EAS CLI:
-   ```bash
-   npm install -g eas-cli
-   ```
+## Costs
 
-2. Login to Expo:
-   ```bash
-   eas login
-   ```
-   (Use your picker123123 account)
+**100% FREE** if you stay within these limits:
+- **Gemini**: 15 requests/min, 1500/day (free tier)
+- **Render**: 750 hours/month (free tier - one service runs continuously)
+- **Vercel**: Unlimited bandwidth (free hobby plan)
+- **Supabase**: 500MB database, 2GB bandwidth/month (free tier)
 
-3. Configure the project:
-   ```bash
-   cd mobile
-   eas build:configure
-   ```
+---
 
-4. Build APK:
-   ```bash
-   eas build --platform android --profile preview
-   ```
+## Architecture
 
-5. Download and install the APK on your phone
+```
+┌─────────────────┐
+│   Vercel PWA    │  ← User opens in browser
+│  (Frontend)     │
+└────────┬────────┘
+         │
+         │ API calls
+         ▼
+┌─────────────────┐
+│  Render Server  │  ← Node.js Express backend
+│   (Backend)     │
+└────────┬────────┘
+         │
+         ├──→ Google Gemini API (vision AI)
+         │
+         └──→ Supabase (optional sync)
+```
 
-## 6. Testing Everything
+---
 
-1. **Backend**: Visit `https://your-backend-url.onrender.com/health`
-   - Should return: `{"status":"healthy"}`
+## File Structure
 
-2. **Frontend**: Open your Vercel URL
-   - Click scan icon
-   - Take photo of nutrition label
-   - Should log the food
+```
+suyufit/
+├── frontend/
+│   ├── index.html          # Main PWA (all-in-one file)
+│   ├── manifest.webmanifest
+│   ├── sw.js              # Service worker for offline
+│   └── icon-*.png         # App icons
+├── backend/
+│   ├── server.js          # Express API
+│   ├── package.json
+│   └── .env.example
+└── mobile/                # React Native (optional)
+```
 
-3. **Mobile**: Open Expo Go app
-   - Test all 4 tabs
-   - Test AI scanning
-   - Test manual food/workout entry
+---
+
+## API Endpoints
+
+### POST /api/scan
+Scan nutrition label with AI
+```json
+{
+  "imageBase64": "data:image/jpeg;base64,..."
+}
+```
+
+### POST /api/sync
+Save user data (optional)
+```json
+{
+  "userId": "user123",
+  "state": { ... }
+}
+```
+
+### GET /api/sync/:userId
+Load user data (optional)
+
+### GET /health
+Health check endpoint
+
+---
+
+## Development
+
+### Local Backend
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with your keys
+node server.js
+```
+
+### Local Frontend
+```bash
+cd frontend
+python -m http.server 8000
+# Open http://localhost:8000
+```
+
+---
 
 ## Troubleshooting
 
-### Backend not responding:
-- Check Render logs: Dashboard > Your Service > Logs
-- Verify environment variables are set correctly
-- Make sure Supabase credentials are correct
+### AI Scan Not Working
+1. Check Render logs: Dashboard → Logs tab
+2. Verify all 4 Gemini keys are added
+3. Check backend URL in frontend code
+4. Test endpoint: `https://your-backend.onrender.com/health`
 
-### Frontend can't connect to backend:
-- Verify BACKEND_URL in frontend/index.html matches your Render URL
-- Check browser console for CORS errors
-- Redeploy frontend after changing BACKEND_URL
+### "Render service sleeping"
+Free tier sleeps after 15 min idle. First request takes 30-60s to wake.
 
-### Mobile app can't scan:
-- Check camera permissions on phone
-- Verify BACKEND_URL in FoodScreen.js
-- Check that backend is awake (not sleeping)
+### PWA Not Installing
+1. Must be HTTPS (Vercel provides this)
+2. Chrome only on mobile
+3. Check manifest.webmanifest path
 
-### Groq API errors:
-- Check Groq API key limits: https://console.groq.com/
-- Keys rotate automatically, but if all 3 are rate-limited, wait 1 minute
+---
 
-## Repository Structure
+## Customization
 
-```
-SuyuFit/
-├── backend/           → Deployed to Render
-├── frontend/          → Deployed to Vercel
-├── mobile/           → Built with Expo EAS
-├── supabase-schema.sql
-└── README.md
+### Change Colors
+Edit CSS variables in `frontend/index.html` (~line 25):
+```css
+:root{
+  --gold:#B49AFC;  /* Primary accent */
+  --bg:#000000;    /* Background */
+  --ink:#EFEBFA;   /* Text color */
+}
 ```
 
-## Maintenance
+### Change Targets
+Default profile uses recomp formula (slight deficit, high protein).
+Edit `calcTargets()` function in frontend.
 
-- **Render Free Tier**: Sleeps after 15 min inactivity (UptimeRobot keeps it awake)
-- **Vercel Free Tier**: 100GB bandwidth/month (plenty for this use case)
-- **Supabase Free Tier**: 500MB storage, 2GB data transfer/month
-- **Groq API**: 14,400 requests/day per key (43,200/day total with 3 keys)
+---
 
-All services should remain free unless traffic grows significantly.
+## Credits
+
+Built with:
+- Google Gemini 2.5 Flash (vision AI)
+- Express.js (backend)
+- Vanilla JS (frontend - no framework!)
+- Supabase (optional sync)
+
+---
+
+## License
+
+MIT - Use however you want, just don't blame me if your gains disappear 💪
+
+---
+
+## Support
+
+Issues? Check:
+1. Render logs for backend errors
+2. Browser console (F12) for frontend errors
+3. All API keys are valid and added to Render
+
+---
+
+**That's it! You now have a fully functional AI-powered fitness tracker.**
